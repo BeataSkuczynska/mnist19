@@ -1,79 +1,115 @@
-from __future__ import print_function
 import keras
-from keras.datasets import mnist
-from keras.models import Sequential
-from keras.layers import Dense, Dropout, Flatten, Activation, LeakyReLU
-from keras.layers import Conv2D, MaxPooling2D
+from keras.layers import Dense, Flatten, Activation, LeakyReLU, Conv2D, MaxPooling2D
+from mlxtend.data import loadlocal_mnist
+from skimage.transform import downscale_local_mean
+import numpy as np
+from time import time
+
+
+def reshape_data(data, image_downsize, height, width):
+    new_data = np.zeros((data.shape[0], height*width))
+    if image_downsize:
+        for i, image in enumerate(data):
+            new_image = image.reshape(28, 28)
+            new_image = downscale_local_mean(new_image, (2, 2))
+            new_image = new_image.reshape(1, height*width)
+            new_data[i] = new_image
+        new_data = new_data.reshape(new_data.shape[0], height, width, 1)
+        return new_data
+    else:
+        data = data.reshape(data_train.shape[0], height, width, 1)
+    return data
+
 
 batch_size = 128
-num_classes = 10
+n_classes = 10
 epochs = 10
 activation = 'relu'  # 'relu' or 'leakyrelu'
 optimizer = 'adadelta'  # 'adadelta' or 'sgd'
+image_downsize = True
 
-# input image dimensions
-img_rows, img_cols = 28, 28
+if image_downsize:
+    # input image dimensions
+    height, width = 14, 14
+else:
+    # input image dimensions
+    height, width = 28, 28
 
-# the data, split between train and test sets
-(x_train, y_train), (x_test, y_test) = mnist.load_data()
+# set the local directory in which the mnist data is saved
+directory = '/Users/jits/Documents/mnist'
 
-x_train = x_train.reshape(x_train.shape[0], img_rows, img_cols, 1)
-x_test = x_test.reshape(x_test.shape[0], img_rows, img_cols, 1)
-input_shape = (img_rows, img_cols, 1)
+# load the data in training and test set
+data_train, label_train = loadlocal_mnist(images_path='{0}/train-images-idx3-ubyte'.format(directory),
+                                          labels_path='{0}/train-labels-idx1-ubyte'.format(directory))
 
-# normalize data between 0 (black) and 1 (white)
-x_train = x_train.astype('float32')
-x_test = x_test.astype('float32')
-x_train /= 255
-x_test /= 255
+data_test, label_test = loadlocal_mnist(images_path='{0}/train-images-idx3-ubyte'.format(directory),
+                                        labels_path='{0}/train-labels-idx1-ubyte'.format(directory))
+# reshape the data
+data_train = reshape_data(data_train, image_downsize, height, width)
+data_test = reshape_data(data_test, image_downsize, height, width)
+input_shape = (height, width, 1)
 
-print('x_train shape:', x_train.shape)
-print(x_train.shape[0], 'train samples')
-print(x_test.shape[0], 'test samples')
+# the data is normalized between 0 and 1
+data_train = data_train.astype('float32')
+data_test = data_test.astype('float32')
+data_train /= 255
+data_test /= 255
 
-# convert class vectors to binary class matrices
-y_train = keras.utils.to_categorical(y_train, num_classes)
-y_test = keras.utils.to_categorical(y_test, num_classes)
+# create class matrices for classification
+label_train = keras.utils.to_categorical(label_train, n_classes)
+label_test = keras.utils.to_categorical(label_test, n_classes)
 
-model = Sequential()
-model.add(Conv2D(32, kernel_size=(3, 3),
-                 input_shape=input_shape))
+# create model
+model = keras.models.Sequential()
+
+# first convolutional layer
+model.add(Conv2D(32, kernel_size=(3, 3), input_shape=input_shape))
 if activation == 'relu':
     model.add(Activation('relu'))
 elif activation == 'leakyrelu':
     model.add(LeakyReLU())
+
+# first pooling layer
+model.add(MaxPooling2D(pool_size=(2, 2)))
+
+# second convolutional layer
 model.add(Conv2D(64, (3, 3)))
 if activation == 'relu':
     model.add(Activation('relu'))
 elif activation == 'leakyrelu':
     model.add(LeakyReLU())
+
+# second pooling layer
 model.add(MaxPooling2D(pool_size=(2, 2)))
-# model.add(Dropout(0.25))
+
+# reshape the activation to a 1-d vector
 model.add(Flatten())
+
+# first fully connected layer
 model.add(Dense(128))
 if activation == 'relu':
     model.add(Activation('relu'))
 elif activation == 'leakyrelu':
     model.add(LeakyReLU())
-# model.add(Dropout(0.5))
-model.add(Dense(num_classes, activation='softmax'))
 
+# second fully connected layer (to the output)
+model.add(Dense(n_classes, activation='softmax'))
 
+# set optimizer
 if optimizer == 'sgd':
-    model.compile(loss=keras.losses.categorical_crossentropy,
-                  optimizer=keras.optimizers.SGD(),
-                  metrics=['accuracy'])
+    model.compile(loss=keras.losses.categorical_crossentropy, optimizer=keras.optimizers.SGD(), metrics=['accuracy'])
 elif optimizer == 'adadelta':
-    model.compile(loss=keras.losses.categorical_crossentropy,
-                  optimizer=keras.optimizers.Adadelta(),
-                  metrics=['accuracy'])
+    model.compile(loss=keras.losses.categorical_crossentropy, optimizer=keras.optimizers.Adadelta(), metrics=['accuracy'])
 
+# time training:
+start = time()
 
-model.fit(x_train, y_train,
-          batch_size=batch_size,
-          epochs=epochs,
-          verbose=1,
-          validation_data=(x_test, y_test))
-score = model.evaluate(x_test, y_test, verbose=0)
-print('Test loss:', score[0])
-print('Test accuracy:', score[1])
+# train model
+model.fit(data_train, label_train, batch_size=batch_size, epochs=epochs, verbose=1, validation_data=(data_test, label_test))
+
+elapsed = time() - start
+print("Traing took {0} seconds".format(elapsed))
+
+# test model
+performance = model.evaluate(data_test, label_test, verbose=0)
+print('Validation accuracy:', performance[1])
