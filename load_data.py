@@ -1,19 +1,24 @@
+import os
+import numpy as np
+import tqdm as tqdm
 
-import keras
-from keras.datasets import mnist
-import sys
-from list_to_image import write_image
-
-
-def main(argv):
-    (images_train, label_train), (images_test, label_test) = mnist.load_data()
+from keras.preprocessing.image import load_img
 
 
-    write_image("testimage", images_train[1100])
+def load_noisy_data(dir):
+    files = os.listdir(dir)
 
+    img = load_img(os.path.join(dir, files[0]))
+    width, height = img.size
+    data = np.zeros((len(files), width*height))
 
-    # images, labels = mndata.load_testing()
+    labels = np.zeros(len(files), dtype=np.uint8)
 
+    for id, file in enumerate(tqdm.tqdm(files)):
+        labels[id] = str(file).split(".")[0].split("_")[1]
+        img = load_img(os.path.join(dir, file), color_mode="grayscale")
+        img = np.array(img)
+        img = np.reshape(img, width*height)
+        data[id] = img
 
-if __name__ == "__main__":
-    main(sys.argv)
+    return data, labels
